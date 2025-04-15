@@ -1,9 +1,11 @@
-# GBDT
+# 基于GBDT的网络攻击检测与识别
 
-参考了[bluekingsong](https://github.com/bluekingsong/simple-gbdt)和[qiyiping](https://github.com/qiyiping/gbdt)的实现  
+## 基于GBDT的改进
 
-实现了regression、binary classification、multi-calss classification
+正则化防止过拟合
 
-相关公式可以参考我整理的[GBDT.ipynb文件](http://nbviewer.ipython.org/github/liudragonfly/GBDT/blob/master/GBDT.ipynb)
 
-在data目录下提供了一个测试数据集
+
+## 测试集
+
+GBDT_NIDS
