@@ -4,6 +4,7 @@ import abc
 from random import sample
 from math import exp, log
 from gbdt.tree import construct_decision_tree
+import time
 
 
 class RegressionLossFunction(metaclass=abc.ABCMeta):
@@ -188,25 +189,29 @@ class GBDT:
             f = dict()  # 记录F_{m-1}的值
             self.loss.initialize(f, dataset)
             for iter in range(1, self.max_iter+1):
+                print(f"Starting iteration {iter}...")
+                start_time = time.time()
+
                 subset = train_data
                 if 0 < self.sample_rate < 1:
                     subset = sample(subset, int(len(subset)*self.sample_rate))
                 self.trees[iter] = dict()
-                # 用损失函数的负梯度作为回归问题提升树的残差近似值
+# 用损失函数的负梯度作为回归问题提升树的残差近似值
                 residual = self.loss.compute_residual(dataset, subset, f)
                 for label in label_valueset:
                     # 挂在叶子节点下的各种样本,只有到迭代的max-depth才会使用
                     # 存放的各个叶子节点，注意叶子节点存放的是各个条件下的样本集点
+                    print(f"  Building tree...{label}")
+
                     leaf_nodes = []
-                    targets = {}
-                    for id in subset:
-                        targets[id] = residual[id][label]
-                    # 对某一个具体的label-K分类，选择max-depth个特征构造决策树
+                    targets = {id: residual[id][label] for id in subset}
                     tree = construct_decision_tree(dataset, subset, targets, 0, leaf_nodes, self.max_depth, self.loss, self.split_points)
                     self.trees[iter][label] = tree
                     self.loss.update_f_value(f, tree, leaf_nodes, subset, dataset, self.learn_rate, label)
+
                 train_loss = self.compute_loss(dataset, train_data, f)
-                print("iter%d : average train_loss=%f" % (iter, train_loss))
+                elapsed_time = time.time() - start_time
+                print(f"Iteration {iter} completed in {elapsed_time:.2f} seconds. Average train loss: {train_loss:.6f}")
 
         else:
             if self.loss_type == 'binary-classification':
@@ -217,22 +222,31 @@ class GBDT:
             f = dict()  # 记录F_{m-1}的值
             self.loss.initialize(f, dataset)
             for iter in range(1, self.max_iter+1):
+                print(f"Starting iteration {iter}...")
+                start_time = time.time()
+
                 subset = train_data
                 if 0 < self.sample_rate < 1:
                     subset = sample(subset, int(len(subset)*self.sample_rate))
-                # 用损失函数的负梯度作为回归问题提升树的残差近似值
+# 用损失函数的负梯度作为回归问题提升树的残差近似值
                 residual = self.loss.compute_residual(dataset, subset, f)
                 leaf_nodes = []
                 targets = residual
+                print("  Building tree...")
                 tree = construct_decision_tree(dataset, subset, targets, 0, leaf_nodes, self.max_depth, self.loss, self.split_points)
                 self.trees[iter] = tree
                 self.loss.update_f_value(f, tree, leaf_nodes, subset, dataset, self.learn_rate)
+
                 if isinstance(self.loss, RegressionLossFunction):
-                    # todo 判断回归的效果
+# todo 判断回归的效果
+# todo 判断回归的效果
+# todo 判断回归的效果
+# todo 判断回归的效果
                     pass
                 else:
                     train_loss = self.compute_loss(dataset, train_data, f)
-                    print("iter%d : train loss=%f" % (iter,train_loss))
+                    elapsed_time = time.time() - start_time
+                    print(f"Iteration {iter} completed in {elapsed_time:.2f} seconds. Train loss: {train_loss:.6f}")
 
     def compute_loss(self, dataset, subset, f):
         loss = 0.0

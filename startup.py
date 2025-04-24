@@ -23,11 +23,20 @@ iter18 : train loss=0.008619
 iter19 : train loss=0.007306
 iter20 : train loss=0.005610
 """
+import pandas as pd
 from gbdt.data import DataSet
 from gbdt.model import GBDT
 
 if __name__ == '__main__':
-    data_file = './data/credit.data.csv'
-    dateset = DataSet(data_file)
-    gbdt = GBDT(max_iter=20, sample_rate=0.8, learn_rate=0.5, max_depth=7, loss_type='binary-classification')
-    gbdt.fit(dateset, dateset.get_instances_idset())
+    # data_file = './data/credit.data.csv'
+    data_file = './data/multi_class_train.csv'
+    # 加载数据
+    data = pd.read_csv(data_file)
+    features = data.drop(columns=['label'])
+    labels = data['label']
+
+    # 创建DataSet实例
+    dateset = DataSet(features, labels)
+
+    gbdt = GBDT(max_iter=20, sample_rate=0.8, learn_rate=0.5, max_depth=3)
+    gbdt.fit(dateset, list(dateset.get_instances_idset()))
