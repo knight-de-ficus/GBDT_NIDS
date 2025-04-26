@@ -1,11 +1,14 @@
 import pandas as pd
 
 # Load attack types
-with open("data\\NSL-KDD-DataSet\\attack_types.txt", "r") as f:
-    attack_types = [line.strip() for line in f.readlines()]
+# with open("data\\NSL-KDD-DataSet\\attack_types.txt", "r") as f:
+#     attack_types = [line.strip() for line in f.readlines()]
 
-# Create label_mapping and reverse_label_mapping
-label_mapping = {i: attack for i, attack in enumerate(attack_types)}
+# Correct label_mapping and reverse_label_mapping
+label_mapping = {
+    0: 'Normal', 1: 'Backdoor', 2: 'Analysis', 3: 'Fuzzers', 
+    4: 'Shel', 6: 'Exploits', 7: 'DoS', 8: 'Worms', 9: 'Generic'
+}
 reverse_label_mapping = {attack: i for i, attack in label_mapping.items()}
 
 # Load result.csv

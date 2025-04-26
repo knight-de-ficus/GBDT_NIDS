@@ -6,6 +6,8 @@ from math import exp, log
 from gbdt.tree import construct_decision_tree
 import time
 import pandas as pd
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
 
 
 class RegressionLossFunction(metaclass=abc.ABCMeta):
@@ -168,152 +170,64 @@ class MultinomialDeviance(ClassificationLossFunction):
         return ((self.K-1)/self.K)*(sum1/sum2)
 
 
-class GBDT:
-    def __init__(self, max_iter, sample_rate, learn_rate, max_depth, loss_type='multi-classification', split_points=0):
-        self.max_iter = max_iter
-        self.sample_rate = sample_rate
-        self.learn_rate = learn_rate
+class GBDTMultiClassifier:
+    def __init__(self, n_estimators=100, learning_rate=0.1, max_depth=3):
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
         self.max_depth = max_depth
-        self.loss_type = loss_type
-        self.split_points = split_points
-        self.loss = None
-        self.trees = dict()
+        self.trees = []  # 每个类别的树
+        self.classes_ = None
 
-    def fit(self, dataset, train_data):
-        if self.loss_type == 'multi-classification':
-            label_valueset = dataset.get_label_valueset()
-            self.loss = MultinomialDeviance(dataset.get_label_size(), label_valueset)
-            f = pd.DataFrame(0.0, index=dataset.data.index, columns=list(label_valueset))  # Use DataFrame for multi-class F values
-            self.loss.initialize(f, dataset)
-            for iter in range(1, self.max_iter + 1):
-                print(f"Starting iteration {iter}...")
-                start_time = time.time()
+    def fit(self, X, y):
+        # 获取类别标签
+        self.classes_ = np.unique(y)
+        n_classes = len(self.classes_)
 
-                subset = train_data
-                if 0 < self.sample_rate < 1:
-                    subset = dataset.data.sample(frac=self.sample_rate).index
-                self.trees[iter] = dict()
+        # 初始化F值
+        F = np.zeros((X.shape[0], n_classes))
 
-                residual = self.loss.compute_residual(dataset, subset, f)
-                for label in label_valueset:
-                    print(f"  Building tree...{label}")
+        # One-hot编码标签
+        y_one_hot = np.zeros((X.shape[0], n_classes))
+        for i, label in enumerate(self.classes_):
+            y_one_hot[:, i] = (y == label).astype(int)
 
-                    leaf_nodes = []
-                    targets = residual.loc[subset, label]
-                    tree = construct_decision_tree(dataset, subset, targets, 0, leaf_nodes, self.max_depth, self.loss, self.split_points)
-                    self.trees[iter][label] = tree
-                    self.loss.update_f_value(f, tree, leaf_nodes, subset, dataset, self.learn_rate, label)
+        for estimator_idx in range(self.n_estimators):
+            print(f"Starting training for tree {estimator_idx + 1}/{self.n_estimators}...")
+            iteration_start_time = time.time()
 
-                train_loss = self.compute_loss(dataset, train_data, f)
-                elapsed_time = time.time() - start_time
-                print(f"Iteration {iter} completed in {elapsed_time:.2f} seconds. Average train loss: {train_loss:.6f}")
+            trees_for_iteration = []
+            avg_residuals = []
 
-        else:
-            if self.loss_type == 'binary-classification':
-                self.loss = BinomialDeviance(n_classes=dataset.get_label_size())
-            elif self.loss_type == 'regression':
-                self.loss = LeastSquaresError(n_classes=1)
+            for class_idx in range(n_classes):
+                # 计算残差
+                residual = y_one_hot[:, class_idx] - self._softmax(F)[:, class_idx]
+                avg_residual = np.mean(np.abs(residual))
+                avg_residuals.append(avg_residual)
 
-            f = pd.Series(0.0, index=dataset.data.index)  # 使用Series记录F_{m-1}的值
-            self.loss.initialize(f, dataset)
-            for iter in range(1, self.max_iter+1):
-                print(f"Starting iteration {iter}...")
-                start_time = time.time()
+                # 拟合残差
+                tree = DecisionTreeRegressor(max_depth=self.max_depth)
+                tree.fit(X, residual)
+                trees_for_iteration.append(tree)
 
-                subset = train_data
-                if 0 < self.sample_rate < 1:
-                    subset = dataset.data.sample(frac=self.sample_rate).index
+                # 更新F值
+                F[:, class_idx] += self.learning_rate * tree.predict(X)
 
-                residual = self.loss.compute_residual(dataset, subset, f)
-                leaf_nodes = []
-                targets = residual.loc[subset]
-                print("  Building tree...")
-                tree = construct_decision_tree(dataset, subset, targets, 0, leaf_nodes, self.max_depth, self.loss, self.split_points)
-                self.trees[iter] = tree
-                self.loss.update_f_value(f, tree, leaf_nodes, subset, dataset, self.learn_rate)
+            self.trees.append(trees_for_iteration)
 
-                if isinstance(self.loss, RegressionLossFunction):
-                    pass
-                else:
-                    train_loss = self.compute_loss(dataset, train_data, f)
-                    elapsed_time = time.time() - start_time
-                    print(f"Iteration {iter} completed in {elapsed_time:.2f} seconds. Train loss: {train_loss:.6f}")
+            iteration_elapsed_time = time.time() - iteration_start_time
+            print(f"Tree {estimator_idx + 1} completed. Average residual: {np.mean(avg_residuals):.6f}, Training time: {iteration_elapsed_time:.2f} seconds.")
 
-    def compute_loss(self, dataset, subset, f):
-        loss = 0.0
-        if self.loss.K == 1:
-            for id in subset:
-                y_i = dataset.data.loc[id, 'label']
-                f_value = f[id]
-                p_1 = 1/(1+exp(-2*f_value))
-                try:
-                    loss -= ((1+y_i)*log(p_1)/2) + ((1-y_i)*log(1-p_1)/2)
-                except ValueError as e:
-                    print(y_i, p_1)
-        else:
-            for id in subset:
-                instance = dataset.data.loc[id]
-                f_values = f.loc[id]
-                exp_values = {label: exp(f_values[label]) for label in f_values.index}
-                probs = {label: exp_values[label]/sum(exp_values.values()) for label in f_values.index}
-                loss -= log(probs[instance['label']])
-        return loss / len(subset)
+    def predict(self, X):
+        # 初始化F值
+        F = np.zeros((X.shape[0], len(self.classes_)))
 
-    def compute_instance_f_value(self, instance):
-        """计算样本的f值"""
-        if self.loss.K == 1:
-            f_value = 0.0
-            for iter in self.trees:
-                f_value += self.learn_rate * iter.get_predict_value(instance)
-        else:
-            f_value = dict()
-            for label in self.loss.labelset:
-                f_value[label] = 0.0
-            for iter in self.trees:
-                # 对于多分类问题，为每个类别构造一颗回归树
-                for label in self.loss.labelset:
-                    tree = self.trees[iter][label]
-                    f_value[label] += self.learn_rate*tree.get_predict_value(instance)
-        return f_value
+        for trees_for_iteration in self.trees:
+            for class_idx, tree in enumerate(trees_for_iteration):
+                F[:, class_idx] += self.learning_rate * tree.predict(X)
 
-    def predict(self, instance):
-        """
-        对于回归和二元分类返回f值
-        对于多元分类返回每一类的f值
-        """
-        return self.compute_instance_f_value(instance)
+        # 返回概率最大的类别
+        return self.classes_[np.argmax(self._softmax(F), axis=1)]
 
-    def predict_prob(self, instance):
-        """为了统一二元分类和多元分类，返回属于每个类别的概率"""
-        if isinstance(self.loss, RegressionLossFunction):
-            raise RuntimeError('regression problem can not predict prob ')
-        if self.loss.K == 1:
-            f_value = self.compute_instance_f_value(instance)
-            probs = dict()
-            probs['+1'] = 1/(1+exp(-2*f_value))
-            probs['-1'] = 1 - probs['+1']
-        else:
-            f_value = self.compute_instance_f_value(instance)
-            exp_values = dict()
-            for label in f_value:
-                exp_values[label] = exp(f_value[label])
-            exp_sum = sum(exp_values.values())
-            probs = dict()
-            # 归一化，并得到相应的概率值
-            for label in exp_values:
-                probs[label] = exp_values[label]/exp_sum
-        return probs
-
-    def predict_label(self, instance):
-        """预测标签"""
-        predict_label = None
-        if isinstance(self.loss, BinomialDeviance):
-            probs = self.predict_prob(instance)
-            predict_label = 1 if probs[1] >= probs[-1] else -1
-        else:
-            probs = self.predict_prob(instance)
-            # 选出K分类中，概率值最大的label
-            for label in probs:
-                if not predict_label or probs[label] > probs[predict_label]:
-                    predict_label = label
-        return predict_label
+    def _softmax(self, F):
+        exp_F = np.exp(F - np.max(F, axis=1, keepdims=True))  # 防止溢出
+        return exp_F / np.sum(exp_F, axis=1, keepdims=True)

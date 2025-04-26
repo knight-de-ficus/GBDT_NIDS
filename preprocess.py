@@ -55,9 +55,9 @@ def preprocess_data(training_file_path, test_file_path, mode="one-hot"):
     test_data = pd.read_csv(test_file_path)
 
     training_labels = training_data.iloc[:, -2]
-    training_features = training_data.iloc[:, :-2]
+    training_features = training_data.iloc[:, 1:-2]
     test_labels = test_data.iloc[:, -2]
-    test_features = test_data.iloc[:, :-2]
+    test_features = test_data.iloc[:, 1:-2]
 
     # 新建一个字典 types，将 training_labels 中的元素映射到数字
     types = {label: idx for idx, label in enumerate(training_labels.unique())}
